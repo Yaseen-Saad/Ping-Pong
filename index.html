@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fancy Ping Pong Game (Easier)</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0; 
+      width: 100%; height: 100%;
+      background: linear-gradient(135deg, #f6d365, #fda085, #a1c4fd, #c2e9fb);
+      background-size: 300% 300%;
+      animation: animatinBg 12s ease infinite;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    @keyframes animatinBg {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* Start Menu */
+    #startMenu {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      display: flex; 
+      flex-direction: column;
+      align-items: center; 
+      justify-content: center;
+      text-align: center;
+      z-index: 999;
+    }
+    #title {
+      font-size: 3em; 
+      margin-bottom: 20px;
+      letter-spacing: 2px;
+    }
+    .diff-btn {
+      background: #fff;
+      border: none;
+      color: #111;
+      padding: 12px 25px;
+      font-size: 1em;
+      margin: 8px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.3s ease;
+    }
+    .diff-btn:hover {
+      transform: scale(1.05);
+      background: #eee;
+    }
+
+    /* Scoreboard */
+    #scoreboard {
+      position: absolute;
+      top: 10px; left: 0; right: 0;
+      color: #fff;
+      text-align: center;
+      font-size: 1.5em;
+      font-weight: bold;
+      text-shadow: 2px 2px 6px rgba(0,0,0,0.6);
+    }
+    .scoreHighlight {
+      animation: highlightSc 0.6s forwards;
+    }
+    @keyframes highlightSc {
+      0% { color: #fff; }
+      100% { color: #fffc5e; }
+    }
+
+    /* Canvas */
+    #gameCanvas {
+      display: block;
+      margin: 0 auto;
+      margin-top: 6vh;
+      background: #000; 
+      border: 2px solid #fff;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+
+    /* Winner Overlay */
+    #winnerOverlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      display: flex; 
+      flex-direction: column;
+      align-items: center; 
+      justify-content: center;
+      text-align: center;
+      z-index: 999;
+      display: none;
+    }
+    #winnerOverlay h1 {
+      font-size: 2.8em;
+      margin-bottom: 20px;
+    }
+    #playAgainBtn {
+      background: #fff;
+      border: none;
+      color: #111;
+      padding: 12px 25px;
+      font-size: 1em;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.3s ease;
+    }
+    #playAgainBtn:hover {
+      background: #ddd;
+    }
+  </style>
+</head>
+<body>
+  <!-- Start Menu -->
+  <div id="startMenu">
+    <div id="title">Fancy Ping Pong (Easier)</div>
+    <p>Choose Difficulty</p>
+    <button class="diff-btn" onclick="startGame('easy')">Easy</button>
+    <button class="diff-btn" onclick="startGame('medium')">Medium</button>
+    <button class="diff-btn" onclick="startGame('hard')">Hard</button>
+  </div>
+
+  <!-- Scoreboard -->
+  <div id="scoreboard"></div>
+
+  <!-- Game Canvas -->
+  <canvas id="gameCanvas" width="800" height="500"></canvas>
+
+  <!-- Winner Overlay -->
+  <div id="winnerOverlay">
+    <h1 id="winnerText"></h1>
+    <button id="playAgainBtn" onclick="resetGame()">Play Again</button>
+  </div>
+
+  <script>
+    // Some speling mistakes / minor naming "typos" remain for authenticity :)
+    
+    // Canvas & context
+    const canvaz = document.getElementById('gameCanvas');
+    const cxt = canvaz.getContext('2d');
+
+    // Paddles
+    const paddleWidth = 12;
+    let paddleHeight = 110;
+    let playerY = canvaz.height / 2 - paddleHeight / 2;
+    const playerX = 0;
+    
+    let aiY = canvaz.height / 2 - paddleHeight / 2;
+    const aiX = canvaz.width - paddleWidth;
+
+    // Ball
+    const ballSize = 12;
+    let ballX = canvaz.width / 2 - ballSize / 2;
+    let ballY = canvaz.height / 2 - ballSize / 2;
+    let ballSpeedX = 3;  // reduced from 5
+    let ballSpeedY = 2;  // reduced from 3
+
+    // Scores
+    let playerScore = 0;
+    let aiScore = 0;
+    let maxScore = 5;
+
+    // Dificulty
+    let difficultyMultiplier = 1;
+
+    // Gamestate
+    let gameRunning = false;
+    let animationFrm;
+
+    // Starfield (slightly fewer or same number for no performance issues)
+    const starCount = 50;
+    const stars = [];
+    for (let i = 0; i < starCount; i++) {
+      stars.push({
+        x: Math.random() * canvaz.width,
+        y: Math.random() * canvaz.height,
+        speed: 0.5 + Math.random() * 0.5,
+        radius: 1 + Math.random() * 2,
+      });
+    }
+
+    // Collision Particles
+    const collisionParticles = [];
+
+    // Power-ups
+    let powerUpTimer = 0;
+    let powerUpActive = false;
+    let powerUpX = 0;
+    let powerUpY = 0;
+    const powerUpSize = 20;
+
+    // Additional "reverse control" effect
+    let reverseControls = false;
+    let reverseTimeout = 0;
+
+    // Input
+    let upPressed = false;
+    let downPressed = false;
+
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'ArrowUp') upPressed = true;
+      if(e.key === 'ArrowDown') downPressed = true;
+    });
+    document.addEventListener('keyup', (e) => {
+      if(e.key === 'ArrowUp') upPressed = false;
+      if(e.key === 'ArrowDown') downPressed = false;
+    });
+
+    // Start
+    function startGame(difficulty) {
+      // Tweak difficulty multipliers so everything is easier
+      if(difficulty === 'easy') {
+        difficultyMultiplier = 0.4; 
+      } else if(difficulty === 'medium') {
+        difficultyMultiplier = 0.8;
+      } else {
+        difficultyMultiplier = 1.2;
+      }
+
+      document.getElementById('startMenu').style.display = 'none';
+      document.getElementById('winnerOverlay').style.display = 'none';
+      playerScore = 0;
+      aiScore = 0;
+      resetPositions();
+      gameRunning = true;
+      mainLoop();
+    }
+
+    // Main Loop
+    function mainLoop() {
+      updateGame();
+      drawGame();
+      animationFrm = requestAnimationFrame(mainLoop);
+    }
+
+    function updateGame() {
+      // Reverse control check
+      const paddleMoveSpeed = 5;  // reduced from 6
+      if (reverseControls) {
+        // Reverse up/down
+        if(upPressed) {
+          playerY += paddleMoveSpeed;
+        }
+        if(downPressed) {
+          playerY -= paddleMoveSpeed;
+        }
+      } else {
+        if(upPressed) {
+          playerY -= paddleMoveSpeed;
+        }
+        if(downPressed) {
+          playerY += paddleMoveSpeed;
+        }
+      }
+
+      // Boundaries for player
+      if(playerY < 0) playerY = 0;
+      if(playerY > canvaz.height - paddleHeight) {
+        playerY = canvaz.height - paddleHeight;
+      }
+
+      // Ball movement
+      ballX += ballSpeedX;
+      ballY += ballSpeedY;
+
+      // AI Movement (slower)
+      const aiCenter = aiY + paddleHeight / 2;
+      // Move at 2 * difficultyMultiplier instead of 4
+      if(aiCenter < ballY) {
+        aiY += 2 * difficultyMultiplier; 
+      } else {
+        aiY -= 2 * difficultyMultiplier;
+      }
+      if(aiY < 0) aiY = 0;
+      if(aiY > canvaz.height - paddleHeight) {
+        aiY = canvaz.height - paddleHeight;
+      }
+
+      // Ball collisions with top/bottom
+      if(ballY < 0 || ballY > canvaz.height - ballSize) {
+        ballSpeedY = -ballSpeedY;
+      }
+
+      // Player paddle collision
+      if(ballX <= playerX + paddleWidth &&
+         ballY + ballSize >= playerY &&
+         ballY <= playerY + paddleHeight) {
+        ballSpeedX = -ballSpeedX;
+        // Lower “spin” factor from 0.25 to 0.15
+        const deltaY = ballY - (playerY + paddleHeight / 2);
+        ballSpeedY = deltaY * 0.15;
+        spawnCollisionParticles(ballX, ballY, '#0ff'); // teal color
+      }
+
+      // AI paddle collision
+      if(ballX + ballSize >= aiX &&
+         ballY + ballSize >= aiY &&
+         ballY <= aiY + paddleHeight) {
+        ballSpeedX = -ballSpeedX;
+        const deltaY = ballY - (aiY + paddleHeight / 2);
+        ballSpeedY = deltaY * 0.15;
+        spawnCollisionParticles(ballX, ballY, '#f0f'); // pinkish
+      }
+
+      // Scoring
+      if(ballX < 0) {
+        aiScore++;
+        highlightScore();
+        resetPositions();
+      } else if(ballX > canvaz.width) {
+        playerScore++;
+        highlightScore();
+        resetPositions();
+      }
+
+      if(playerScore >= maxScore) {
+        endGame('YOU WIN!');
+      } else if(aiScore >= maxScore) {
+        endGame('AI WINS!');
+      }
+
+      // Reverse control countdown
+      if(reverseControls) {
+        reverseTimeout--;
+        if(reverseTimeout <= 0) {
+          reverseControls = false;
+        }
+      }
+
+      // Powerups
+      handlePowerUps();
+
+      // Update scoreboard
+      document.getElementById('scoreboard').textContent = `Player: ${playerScore} | AI: ${aiScore}`;
+
+      // Update collision particples
+      updateCollisionParticles();
+
+      // Update starfield
+      updateStars();
+    }
+
+    function drawGame() {
+      cxt.clearRect(0, 0, canvaz.width, canvaz.height);
+
+      // Draw starfield behind everything
+      drawStars();
+
+      // Draw paddles
+      cxt.fillStyle = '#00cc88';
+      cxt.fillRect(playerX, playerY, paddleWidth, paddleHeight);
+
+      cxt.fillStyle = '#ff66ff';
+      cxt.fillRect(aiX, aiY, paddleWidth, paddleHeight);
+
+      // Draw ball
+      cxt.fillStyle = '#fff';
+      cxt.fillRect(ballX, ballY, ballSize, ballSize);
+
+      // Draw power-up if active
+      if(powerUpActive) {
+        cxt.fillStyle = 'yellow';
+        cxt.beginPath();
+        cxt.arc(powerUpX + powerUpSize/2, powerUpY + powerUpSize/2, powerUpSize/2, 0, Math.PI * 2);
+        cxt.fill();
+      }
+
+      // Draw collision partcles
+      drawCollisionParticles();
+    }
+
+    // Reset ball & paddles
+    function resetPositions() {
+      ballX = canvaz.width / 2 - ballSize / 2;
+      ballY = canvaz.height / 2 - ballSize / 2;
+      // Slower random init speed
+      ballSpeedX = Math.random() > 0.5 ? 3 : -3;
+      ballSpeedY = Math.random() > 0.5 ? 2 : -2;
+
+      playerY = canvaz.height / 2 - paddleHeight / 2;
+      aiY = canvaz.height / 2 - paddleHeight / 2;
+    }
+
+    // End game
+    function endGame(msg) {
+      cancelAnimationFrame(animationFrm);
+      gameRunning = false;
+      document.getElementById('winnerText').textContent = msg;
+      document.getElementById('winnerOverlay').style.display = 'flex';
+    }
+
+    function resetGame() {
+      // Show menu again
+      document.getElementById('startMenu').style.display = 'flex';
+      document.getElementById('winnerOverlay').style.display = 'none';
+      playerScore = 0;
+      aiScore = 0;
+      document.getElementById('scoreboard').textContent = '';
+    }
+
+    // Score highlight
+    function highlightScore() {
+      const board = document.getElementById('scoreboard');
+      board.classList.add('scoreHighlight');
+      setTimeout(() => {
+        board.classList.remove('scoreHighlight');
+      }, 400);
+    }
+
+    /*-----------------------
+      COLLISION PARTICLES
+    ------------------------*/
+    function spawnCollisionParticles(x, y, color) {
+      for(let i = 0; i < 8; i++) {
+        collisionParticles.push({
+          x: x,
+          y: y,
+          vx: (Math.random() - 0.5) * 2, // slower outward speed
+          vy: (Math.random() - 0.5) * 2,
+          alpha: 1,
+          color: color,
+        });
+      }
+    }
+
+    function updateCollisionParticles() {
+      for(let i = 0; i < collisionParticles.length; i++) {
+        let p = collisionParticles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= 0.02;
+        if(p.alpha <= 0) {
+          collisionParticles.splice(i, 1);
+          i--;
+        }
+      }
+    }
+
+    function drawCollisionParticles() {
+      collisionParticles.forEach(p => {
+        cxt.globalAlpha = p.alpha;
+        cxt.fillStyle = p.color;
+        cxt.fillRect(p.x, p.y, 4, 4);
+      });
+      cxt.globalAlpha = 1.0;
+    }
+
+    /*-----------------------
+      POWER-UPS
+    ------------------------*/
+    function handlePowerUps() {
+      if(!powerUpActive) {
+        powerUpTimer++;
+        if(powerUpTimer > 300) {
+          // spawn powerUp
+          powerUpX = Math.random() * (canvaz.width - powerUpSize);
+          powerUpY = Math.random() * (canvaz.height - powerUpSize);
+          powerUpActive = true;
+          powerUpTimer = 0;
+        }
+      } else {
+        // check if player gets it
+        if(powerUpX < playerX + paddleWidth &&
+           powerUpX + powerUpSize > playerX &&
+           powerUpY < playerY + paddleHeight &&
+           powerUpY + powerUpSize > playerY) {
+          activatePlayerPower();
+        }
+        // check if AI gets it
+        else if(powerUpX < aiX + paddleWidth &&
+                powerUpX + powerUpSize > aiX &&
+                powerUpY < aiY + paddleHeight &&
+                powerUpY + powerUpSize > aiY) {
+          activateAiPower();
+        }
+      }
+    }
+
+    function activatePlayerPower() {
+      // randomize effect: enlarge paddle or slow down AI
+      let randomEffect = Math.random();
+      if(randomEffect < 0.5) {
+        // enlarge player paddle
+        paddleHeight += 20;
+        if(paddleHeight > 160) paddleHeight = 160;
+      } else {
+        // reduce AI speed
+        difficultyMultiplier -= 0.2;
+        if(difficultyMultiplier < 0.3) difficultyMultiplier = 0.3;
+      }
+      powerUpActive = false;
+    }
+
+    function activateAiPower() {
+      // random effect for AI
+      let randomEffect = Math.random();
+      if(randomEffect < 0.5) {
+        // shrinks player's paddle
+        paddleHeight -= 10;
+        if(paddleHeight < 50) paddleHeight = 50;
+      } else {
+        // reverse the player's controls for a while
+        reverseControls = true;
+        reverseTimeout = 300; // frames
+      }
+      powerUpActive = false;
+    }
+
+    /*-----------------------
+      STARFIELD BG
+    ------------------------*/
+    function updateStars() {
+      // Move stars downward slowly
+      for(let i = 0; i < stars.length; i++) {
+        stars[i].y += stars[i].speed;
+        if(stars[i].y > canvaz.height) {
+          stars[i].y = 0;
+          stars[i].x = Math.random() * canvaz.width;
+        }
+      }
+    }
+
+    function drawStars() {
+      cxt.save();
+      cxt.fillStyle = '#000';
+      cxt.fillRect(0, 0, canvaz.width, canvaz.height);
+
+      cxt.fillStyle = '#fff';
+      stars.forEach(star => {
+        cxt.beginPath();
+        cxt.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+        cxt.fill();
+      });
+      cxt.restore();
+    }
+  </script>
+</body>
+</html>
